@@ -15,7 +15,7 @@ bankData$y <- bankData$y == 'yes'
 
 bankData$duration <- NULL
 
-#set.seed(1)
+set.seed(1)
 isTraining = runif(nrow(bankData))<.7
 trainingData = subset(bankData,isTraining)
 validationData = subset(bankData,!isTraining)
@@ -93,53 +93,80 @@ mean((validationData$y - predict(cvElasticFit2,newx= validationMat2, type = 'res
 #Running other models
 
 #Test and Evaluate linear models.
-lm1 = lm(y~age+factor(month),data=trainingData)
-lm2 = lm(y~poly(age,3)+factor(month),data=trainingData)
-lm3 = lm(y~.,data=trainingData)
-lm4 = lm(y~.^2,data=trainingData)
 
-mean((predict(lm1,validationData) - validationData$y)^2)
-mean((predict(lm2,validationData) - validationData$y)^2)
-mean((predict(lm3,validationData) - validationData$y)^2)
-mean((predict(lm4,validationData) - validationData$y)^2)
+nFold = 10
+#Step 1: Randomly choose which fold each row is in 
+valNum = floor(runif(nrow(bankData))*nFold)+1
+
+#Create a matrix where we store prediction error 
+modelPerformance = matrix(NA,nFold,6)
 
 
-anova(lm3)
+for(fold in 1:nFold)
+  {
+  #Step 2i: Get the training and validation data for this fold
+  trainingData = subset(bankData,valNum!=fold)
+  validationData = subset(bankData,valNum==fold)
+  
+  lm1 = lm(y~age+factor(month),data=trainingData)
+  lm2 = lm(y~poly(age,3)+factor(month),data=trainingData)
+  lm3 = lm(y~.,data=trainingData)
+  lm4 = lm(y~.^2,data=trainingData)
+  
+  modelPerformance[fold,1] = mean((predict(lm1,validationData) - validationData$y)^2)
+  modelPerformance[fold,2] = mean((predict(lm2,validationData) - validationData$y)^2)
+  modelPerformance[fold,3] = mean((predict(lm3,validationData) - validationData$y)^2)
+  modelPerformance[fold,4] = mean((predict(lm4,validationData) - validationData$y)^2)
+  
+  lm5 = lm(y~.^2,data=trainingData[,-c(6,7)])
+  
+  modelPerformance[fold,5] = mean((predict(lm5,validationData) - validationData$y)^2)
+  
+  lm6 = lm(y~age+job+marital+education+default+contact+factor(month)+factor(day_of_week)+age*job+
+             age*marital+age*education+job*default+job*month+marital*month+education*month+default*
+             contact+default*month*contact*month+month*day_of_week,data=trainingData)
+  
+  modelPerformance[fold,6] = mean((predict(lm6,validationData) - validationData$y)^2)
+  
+}
 
-#Housing/Loan seem unimportant.  Lets delete those. 
-lm5 = lm(y~.^2,data=trainingData[,-c(6,7)])
-mean((predict(lm5,validationData) - validationData$y)^2)
+colMeans(modelPerformance)
 
-lm6 = lm(y~age+job+marital+education+default+contact+factor(month)+factor(day_of_week)+age*job+
-           age*marital+age*education+job*default+job*month+marital*month+education*month+default*
-           contact+default*month*contact*month+month*day_of_week,data=trainingData)
-
-mean((predict(lm6,validationData) - validationData$y)^2)
+#6th model is the best
 
 library('earth')
 
-earth1 = earth(y~.,data=trainingData)
-earth2 = earth(y~.,data=trainingData,degree=2)
-earth3 = earth(y~age+job+marital+education+default+contact+factor(month)+factor(day_of_week)+age*job+
+earthPerformance = matrix(NA,nFold,6)
+
+for(fold in 1:nFold)
+{
+  
+  trainingData = subset(bankData,valNum!=fold)
+  validationData = subset(bankData,valNum==fold)
+
+  earth1 = earth(y~.,data=trainingData)
+  earth2 = earth(y~.,data=trainingData,degree=2)
+  earth3 = earth(y~age+job+marital+education+default+contact+factor(month)+factor(day_of_week)+age*job+
                  age*marital+age*education+job*default+job*month+marital*month+education*month+default*
                  contact+default*month*contact*month+month*day_of_week,data=trainingData)
-#Earth 2 is the best of these
+  
 
-mean((predict(earth1,validationData) - validationData$y)^2)
-mean((predict(earth2,validationData) - validationData$y)^2)
-mean((predict(earth3,validationData) - validationData$y)^2)
+  earthPerformance[fold,1] = mean((predict(earth1,validationData) - validationData$y)^2)
+  earthPerformance[fold,2] = mean((predict(earth2,validationData) - validationData$y)^2)
+  earthPerformance[fold,3] = mean((predict(earth3,validationData) - validationData$y)^2)
 
 
-earth4 = earth(y~.,data=trainingData,degree=2,thres=0)
-earth5 = earth(y~.,data=trainingData,degree=2,thres=0.01)
-earth6 = earth(y~.,data=trainingData,degree=2,thres=0.1)
+  earth4 = earth(y~.,data=trainingData,degree=2,thres=0)
+  earth5 = earth(y~.,data=trainingData,degree=2,thres=0.01)
+  earth6 = earth(y~.,data=trainingData,degree=2,thres=0.1)
 
-mean((predict(earth4,validationData) - validationData$y)^2)
-mean((predict(earth5,validationData) - validationData$y)^2)
-mean((predict(earth6,validationData) - validationData$y)^2)
+  earthPerformance[fold,4] = mean((predict(earth4,validationData) - validationData$y)^2)
+  earthPerformance[fold,5] = mean((predict(earth5,validationData) - validationData$y)^2)
+  earthPerformance[fold,6] = mean((predict(earth6,validationData) - validationData$y)^2)
 
-#model 4 is the best model
+}
 
+colMeans(earthPerformance)
 
 lm1CallRanking = order(predict(lm1,validationData),decreasing = TRUE)
 earth1CallRanking = order(predict(earth1,validationData),decreasing = TRUE)
